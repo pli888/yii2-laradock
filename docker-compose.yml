@@ -4,11 +4,10 @@ services:
 
 ### MFR Container #########################
 
-    modular-file-renderer:
-      container_name: mfr_server
+    mfr_server:
       build: ./modular-file-renderer
       volumes_from:
-        - applications
+        - app
       ports:
         - "7778:7778"
       environment:
@@ -24,10 +23,9 @@ services:
 ### Redis Container #########################################
 
     redis:
-      container_name: redis
       build: ./redis
       volumes:
-        - ${DATA_SAVE_PATH}/redis:/data
+        - ${DATA_SAVE_PATH}/${COMPOSE_PROJECT_NAME}/redis:/data
       ports:
         - "${REDIS_PORT}:6379"
       networks:
@@ -39,7 +37,6 @@ services:
 ### Beanstalkd Container ####################################
 
     beanstalkd:
-      container_name: beanstalkd
       build: ./beanstalkd
       ports:
         - "${BEANSTALKD_HOST_PORT}:11300"
@@ -55,11 +52,10 @@ services:
 ### vsftpd Container #############################
 
     vsftpd:
-      container_name: vsftpd
       build: ./vsftpd
       volumes:
-        - ../protected:/vagrant/protected
-        - /opt/yii-1.1.16:/opt/yii-1.1.16
+        - ${APPLICATION}/protected:/vagrant/protected
+        - ${DATA_SAVE_PATH}/${COMPOSE_PROJECT_NAME}/yii:${YII_PATH}
         - ./vsftpd/update_ftpusers.sh:/usr/sbin/update_ftpusers.sh
         - ./vsftpd/files/100006:/var/ftp/pub/10.5524/100001_101000/100006
         - ./vsftpd/files/100020:/var/ftp/pub/10.5524/100001_101000/100020
@@ -72,7 +68,7 @@ services:
         - ./vsftpd/files/100179:/var/ftp/pub/10.5524/100001_101000/100179
         - ./vsftpd/files/100258:/var/ftp/pub/10.5524/100001_101000/100258
       volumes_from:
-        - applications
+        - app
         #- workspace
       ports:
         - "21:21"
@@ -85,8 +81,8 @@ services:
         - "9111:9111"
       depends_on:
         - postgres
-        - workspace
-        - applications
+        # - workspace
+        - app
       environment:
         - VSFTPD_PORT=${VSFTPD_PORT}
         - FTP_USER=${FTP_USER}
@@ -100,16 +96,29 @@ services:
         - 8.8.8.8
         - 9.9.9.9
 
+### Applications Code Initializer #############################
+
+    init:
+      image: php:5.6-cli
+      volumes_from:
+        - app
+      volumes:
+        - ${DATA_SAVE_PATH}/${COMPOSE_PROJECT_NAME}/yii:${YII_PATH}
+      depends_on:
+        - app
+        - nginx
+        - php-fpm
+        - postgres
+      command: /var/www/protected/yiic lesscompiler
+
 ### Applications Code Container #############################
 
-    applications:
-      container_name: gigadb-app
+    app:
       image: tianon/true
 
 ### Workspace Utilities Container ###########################
 
     workspace:
-      container_name: workspace
       build:
         context: ./workspace
         args:
@@ -154,7 +163,7 @@ services:
           - INSTALL_INTL=${WORKSPACE_INSTALL_INTL}
         dockerfile: "Dockerfile-${PHP_VERSION}"
       volumes_from:
-        - applications
+        - app
       extra_hosts:
         - "dockerhost:${DOCKER_HOST_IP}"
       ports:
@@ -167,7 +176,6 @@ services:
 ### PHP-FPM Container #######################################
 
     php-fpm:
-      container_name: website-php-fpm
       build:
         context: ./php-fpm
         args:
@@ -197,14 +205,12 @@ services:
           - INSTALL_IMAGEMAGICK=${PHP_FPM_INSTALL_IMAGEMAGICK}
         dockerfile: "Dockerfile-${PHP_VERSION}"
       volumes_from:
-        - applications
+        - app
       volumes:
         - ./php-fpm/php${PHP_VERSION}.ini:/usr/local/etc/php/php.ini
-        - ${YII_PATH}:${YII_PATH}
+        - ${DATA_SAVE_PATH}/${COMPOSE_PROJECT_NAME}/yii:${YII_PATH}
       expose:
         - "9000"
-      depends_on:
-        - workspace
       extra_hosts:
         - "dockerhost:${DOCKER_HOST_IP}"
       environment:
@@ -215,12 +221,11 @@ services:
 ### PostgreSQL Container ####################################
 
     postgres:
-      container_name: postgres
       build: ./postgres
       volumes:
-        - ${DATA_SAVE_PATH}/postgres:/var/lib/postgresql
-        - ./postgres/gigadb_testdata.sql:/docker-entrypoint-initdb.d/1-gigadb_testdata.sql
-        - ./postgres/ftpusers_testdata.sql:/docker-entrypoint-initdb.d/2-ftpusers_testdata.sql
+        - ${DATA_SAVE_PATH}/${COMPOSE_PROJECT_NAME}/postgres:/var/lib/postgresql
+        - ${APPLICATION}/sql/gigadb_testdata.sql:/docker-entrypoint-initdb.d/1-gigadb_testdata.sql
+        - ${APPLICATION}/sql/ftpusers_testdata.sql:/docker-entrypoint-initdb.d/2-ftpusers_testdata.sql
       ports:
         - "${POSTGRES_PORT}:5432"
       environment:
@@ -233,45 +238,16 @@ services:
 ### NGINX Server Container ##################################
 
     nginx:
-      container_name: website-nginx
       build:
         context: ./nginx
         args:
           - PHP_UPSTREAM_CONTAINER=${NGINX_PHP_UPSTREAM_CONTAINER}
           - PHP_UPSTREAM_PORT=${NGINX_PHP_UPSTREAM_PORT}
-          - YII_PATH=${YII_PATH}
-          - MAILCHIMP_API_KEY=${MAILCHIMP_API_KEY}
-          - ANALYTICS_CLIENT_EMAIL=${ANALYTICS_CLIENT_EMAIL}
-          - ANALYTICS_CLIENT_ID=${ANALYTICS_CLIENT_ID}
-          - ANALYTICS_KEYFILE_PATH=${ANALYTICS_KEYFILE_PATH}
-          - HOME_URL=${HOME_URL}
-          - SERVER_EMAIL=${SERVER_EMAIL}
-          - RECAPTCHA_PUBLICKEY=${RECAPTCHA_PUBLICKEY}
-          - RECAPTCHA_PRIVATEKEY=${RECAPTCHA_PRIVATEKEY}
-          - GOOGLE_ANALYTICS_PROFILE=${GOOGLE_ANALYTICS_PROFILE}
-          - MDS_USERNAME=${MDS_USERNAME}
-          - MDS_PASSWORD=${MDS_PASSWORD}
-          - MDS_PREFIX=${MDS_PREFIX}
-          - FACEBOOK_APP_ID=${FACEBOOK_APP_ID}
-          - LINKEDIN_API_KEY=${LINKEDIN_API_KEY}
-          - LINKEDIN_SECRET_KEY=${LINKEDIN_SECRET_KEY}
-          - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-          - GOOGLE_SECRET=${GOOGLE_SECRET}
-          - TWITTER_KEY=${TWITTER_KEY}
-          - TWITTER_SECRET=${TWITTER_SECRET}
-          - ORCID_CLIENT_ID=${ORCID_CLIENT_ID}
-          - ORCID_CLIENT_SECRET=${ORCID_CLIENT_SECRET}
-          - FTP_CONNECTION_URL=${FTP_CONNECTION_URL}
-          - GIGADB_DATABASE=${GIGADB_DATABASE}
-          - GIGADB_HOST=${GIGADB_HOST}
-          - GIGADB_USER=${GIGADB_USER}
-          - GIGADB_PASSWORD=${GIGADB_PASSWORD}
-          - GIGADB_ES_PORT=${GIGADB_ES_PORT}
       volumes_from:
-        - applications
+        - app
       volumes:
         - ${NGINX_HOST_LOG_PATH}:/var/log/nginx
-        - ${NGINX_SITES_PATH}:/etc/nginx/sites-available
+        - ${DATA_SAVE_PATH}/${COMPOSE_PROJECT_NAME}/nginx/sites-available:/etc/nginx/sites-available
       ports:
         - "${NGINX_HOST_HTTP_PORT}:80"
         - "${NGINX_HOST_HTTPS_PORT}:443"
@@ -290,7 +266,7 @@ services:
       ports:
         - "5050:5050"
       volumes:
-        - ${DATA_SAVE_PATH}/pgadmin-backup:/var/lib/pgadmin/storage/pgadmin4
+        - ${DATA_SAVE_PATH}/${COMPOSE_PROJECT_NAME}/pgadmin-backup:/var/lib/pgadmin/storage/pgadmin4
       depends_on:
         - postgres
       networks:
@@ -306,7 +282,7 @@ services:
         args:
           - INSTALL_PGSQL=${PHP_WORKER_INSTALL_PGSQL}
       volumes_from:
-        - applications
+        - app
       depends_on:
         - workspace
       extra_hosts:
@@ -336,7 +312,7 @@ services:
           - PHP_UPSTREAM_PORT=${APACHE_PHP_UPSTREAM_PORT}
           - PHP_UPSTREAM_TIMEOUT=${APACHE_PHP_UPSTREAM_TIMEOUT}
       volumes_from:
-        - applications
+        - app
       volumes:
         - ${APACHE_HOST_LOG_PATH}:/var/log/apache2
         - ${APACHE_SITES_PATH}:/etc/apache2/sites-available
@@ -354,7 +330,7 @@ services:
     hhvm:
       build: ./hhvm
       volumes_from:
-        - applications
+        - app
       expose:
         - "9000"
       depends_on:
@@ -368,8 +344,8 @@ services:
     minio:
       build: ./minio
       volumes:
-        - ${DATA_SAVE_PATH}/minio/data:/export
-        - ${DATA_SAVE_PATH}/minio/config:/root/.minio
+        - ${DATA_SAVE_PATH}/${COMPOSE_PROJECT_NAME}/minio/data:/export
+        - ${DATA_SAVE_PATH}/${COMPOSE_PROJECT_NAME}/minio/config:/root/.minio
       ports:
         - "${MINIO_PORT}:9000"
       environment:
@@ -393,7 +369,7 @@ services:
         - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
         - TZ=${WORKSPACE_TIMEZONE}
       volumes:
-        - ${DATA_SAVE_PATH}/mysql:/var/lib/mysql
+        - ${DATA_SAVE_PATH}/${COMPOSE_PROJECT_NAME}/mysql:/var/lib/mysql
         - ${MYSQL_ENTRYPOINT_INITDB}:/docker-entrypoint-initdb.d
       ports:
         - "${MYSQL_PORT}:3306"
@@ -411,7 +387,7 @@ services:
         - MYSQL_PASSWORD=${PERCONA_PASSWORD}
         - MYSQL_ROOT_PASSWORD=${PERCONA_ROOT_PASSWORD}
       volumes:
-        - ${DATA_SAVE_PATH}/percona:/var/lib/mysql
+        - ${DATA_SAVE_PATH}/${COMPOSE_PROJECT_NAME}/percona:/var/lib/mysql
         - ${PERCONA_ENTRYPOINT_INITDB}:/docker-entrypoint-initdb.d
       ports:
         - "${PERCONA_PORT}:3306"
@@ -428,7 +404,7 @@ services:
         - SA_PASSWORD=${MSSQL_PASSWORD}
         - ACCEPT_EULA=Y
       volumes:
-        - ${DATA_SAVE_PATH}/mssql:/var/opt/mssql
+        - ${DATA_SAVE_PATH}/${COMPOSE_PROJECT_NAME}/mssql:/var/opt/mssql
       ports:
         - "${MSSQL_PORT}:1433"
       networks:
@@ -439,7 +415,7 @@ services:
     mariadb:
       build: ./mariadb
       volumes:
-        - ${DATA_SAVE_PATH}/mariadb:/var/lib/mysql
+        - ${DATA_SAVE_PATH}/${COMPOSE_PROJECT_NAME}/mariadb:/var/lib/mysql
         - ${MARIADB_ENTRYPOINT_INITDB}:/docker-entrypoint-initdb.d
       ports:
         - "${MARIADB_PORT}:3306"
@@ -456,7 +432,7 @@ services:
     postgres-postgis:
       build: ./postgres-postgis
       volumes:
-        - ${DATA_SAVE_PATH}/postgres:/var/lib/postgresql/data
+        - ${DATA_SAVE_PATH}/${COMPOSE_PROJECT_NAME}/postgres:/var/lib/postgresql/data
       ports:
         - "${POSTGRES_PORT}:5432"
       environment:
@@ -476,7 +452,7 @@ services:
       environment:
         - NEO4J_AUTH=default:secret
       volumes:
-        - ${DATA_SAVE_PATH}/neo4j:/var/lib/neo4j/data
+        - ${DATA_SAVE_PATH}/${COMPOSE_PROJECT_NAME}/neo4j:/var/lib/neo4j/data
       networks:
         - backend
 
@@ -487,7 +463,7 @@ services:
       ports:
         - "${MONGODB_PORT}:27017"
       volumes:
-        - ${DATA_SAVE_PATH}/mongo:/data/db
+        - ${DATA_SAVE_PATH}/${COMPOSE_PROJECT_NAME}/mongo:/data/db
       networks:
         - backend
 
@@ -498,7 +474,7 @@ services:
       ports:
         - "${RETHINKDB_PORT}:8080"
       volumes:
-        - ${DATA_SAVE_PATH}/rethinkdb:/data/rethinkdb_data
+        - ${DATA_SAVE_PATH}/${COMPOSE_PROJECT_NAME}/rethinkdb:/data/rethinkdb_data
       networks:
         - backend
 
@@ -509,7 +485,7 @@ services:
       volumes_from:
         - workspace
       volumes:
-        - ${DATA_SAVE_PATH}/aerospike:/opt/aerospike/data
+        - ${DATA_SAVE_PATH}/${COMPOSE_PROJECT_NAME}/aerospike:/opt/aerospike/data
       ports:
         - "${AEROSPIKE_SERVICE_PORT}:3000"
         - "${AEROSPIKE_FABRIC_PORT}:3001"
@@ -523,7 +499,7 @@ services:
     memcached:
       build: ./memcached
       volumes:
-        - ${DATA_SAVE_PATH}/memcached:/var/lib/memcached
+        - ${DATA_SAVE_PATH}/${COMPOSE_PROJECT_NAME}/memcached:/var/lib/memcached
       ports:
         - "${MEMCACHED_HOST_PORT}:11211"
       depends_on:
@@ -564,7 +540,7 @@ services:
     caddy:
       build: ./caddy
       volumes_from:
-        - applications
+        - app
       volumes:
         - ${CADDY_CUSTOM_CADDYFILE}:/etc/Caddyfile
         - ${CADDY_HOST_LOG_PATH}:/var/log/caddy
@@ -768,7 +744,7 @@ services:
       build:
         context: ./grafana
       volumes:
-        - ${DATA_SAVE_PATH}/grafana:/var/lib/grafana
+        - ${DATA_SAVE_PATH}/${COMPOSE_PROJECT_NAME}/grafana:/var/lib/grafana
       ports:
         - "${GRAFANA_PORT}:3000"
       networks:
@@ -793,7 +769,7 @@ services:
       build:
         context: ./aws
       volumes_from:
-        - applications
+        - app
       depends_on:
         - workspace
       tty: true
